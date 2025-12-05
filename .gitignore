@@ -3,3 +3,4 @@ data/*.7z
 data/*.txt
 __pycache__/
 *.pyc
+.venv/
