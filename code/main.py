@@ -4,8 +4,6 @@ from utils import load_point_cloud
 
 def main():
     # Define the dataset path relative to this script
-    # Assuming code is in 'code/' and data is in 'data/' (sibling directories)
-    # So we go up one level then into data
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     file_path = os.path.join(base_dir, "data", "domfountain_station2_xyz_intensity_rgb.txt")
 
