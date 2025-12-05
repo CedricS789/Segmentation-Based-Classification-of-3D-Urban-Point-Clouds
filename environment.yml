@@ -1,0 +1,12 @@
+name: u3d
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - numpy
+  - pandas
+  - matplotlib
+  - scipy
+  - open3d
+  - pip:
+    - py7zr
