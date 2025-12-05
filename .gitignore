@@ -1,0 +1,5 @@
+# Ignore data files (large archives and point clouds)
+data/*.7z
+data/*.txt
+__pycache__/
+*.pyc
