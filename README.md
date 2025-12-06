@@ -223,3 +223,7 @@ This class encapsulates the state and behavior required for the Radius Nearest N
             *   `np.linalg.eigh`: Solves the eigen decomposition.
             *   **Selection**: The eigenvector corresponding to the *smallest* eigenvalue is selected as the normal, as this direction minimizes variance (orthogonal to the surface).
 *   **Goal**: Produces the final structured `DataFrame` of Super-Voxels, containing all computed geometric and color features ready for classification.
+
+---
+
+![Processing Pipeline Visualization](assets/pipeline.png)
