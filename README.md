@@ -1,105 +1,181 @@
-# Project Implementation: Segmentation Based Classification of 3D Urban Point Clouds
+# Segmentation Based Classification of 3D Urban Point Clouds
 
-This project implements the methodology described in *"Segmentation Based Classification of 3D Urban Point Clouds"*. The system transforms raw 3D point cloud data into semantically classified objects (Buildings, Trees, Poles, Cars, Ground) using a bottom-up voxelisation and segmentation approach.
+This project implements the methodology described in the research paper *"Segmentation Based Classification of 3D Urban Point Clouds."* The primary goal is to semantically classify 3D urban data by processing raw point clouds into meaningful, classified objects.
 
-## 1. Data Acquisition and Preprocessing
+## Phase 1: Data Acquisition
 
-The point cloud data is sourced from the **Semantic3D** benchmark. Specifically, the `domfountain_station2` dataset is used.
+The **Semantic3D** benchmark is utilized as the data source, specifically the `domfountain_station2` dataset.
 
--   **Input**: Raw 3D point cloud data containing spatial coordinates ($x, y, z$), RGB color, and reflectance intensity.
--   **Process**: The data (41,268,288 points) is loaded efficiently using optimized C-engine parsing.
+The input consists of raw 3D point cloud data that contains spatial coordinates ($x, y, z$), RGB color values, and reflectance intensity. Handling this data presents a challenge due to its scale; the dataset comprises **41,268,288** individual points. To manage this effectively, the loading phase has been optimized using C-engine parsing, which allows for efficient parsing of the large-scale ASCII format.
 
----
+## Phase 2: Voxelisation (r-NN)
 
-## 2. Voxelisation (Radius Nearest Neighbor)
+To address the issue of data redundancy and to provide structure to the sparse point cloud, the **Radius Nearest Neighbor (r-NN)** voxelisation strategy is applied.
 
-The data complexity is reduced by grouping raw points into "super-voxels" (s-voxels) using the **r-NN (Radius Nearest Neighbor)** method.
+During this phase, a fixed radius of $r = 0.1$ **m** is strictly enforced. The output of this process is the grouping of raw points into higher-level structures known as **Super-Voxels (s-voxels)**.
 
-### 2.1 Conceptual Framework
+## Phase 3: Super-Voxel Transformation
 
-The r-NN method employs a "shrink-wrapping" strategy (bottom-up):
--   **No fixed grid**: Voxels are created only where data exists.
--   **Adaptive Size**: The voxel boundaries ($s_x, s_y, s_z$) shrink to fit the points exactly.
+Once the s-voxels are established, each one is transformed into a feature-rich entity by computing a specific set of attributes:
 
-### 2.2 Mathematical Formulation
+* The **Geometric Center**, or centroid $(V_x, V_y, V_z)$, is calculated for each voxel.
 
-The global set of points $\mathcal{S}$ is iteratively processed to generate s-voxels $V$ with a fixed radius **$r = 0.1$ m**:
+* The **Color Properties** are analyzed by determining the mean RGB and Intensity values, along with their respective variances.
 
-1.  **Seed Selection**: A random center point $P_{seed}$ is selected from $\mathcal{S}$.
-2.  **Neighborhood Search**: All points $P_k$ within distance $r$ are identified:
-    $$ \| P_k - P_{seed} \|_2 \le 0.1 $$
-3.  **Voxel Formation**: The resulting voxel is an Axis-Aligned Bounding Box (AABB) defined by the min/max coordinates of these neighbors.
-4.  **Exclusion Principle**: These points are removed from $\mathcal{S}$ immediately, ensuring strict partitioning.
+* The **Surface Orientation** is determined by computing normal vectors $(V_{nx}, V_{ny}, V_{nz})$ via Principal Component Analysis (PCA).
 
----
+# Implementation
 
-## 3. Transformation into Super-Voxels
+This section details the theoretical framework, the mathematical models applied, and the code structure used to execute the project.
 
-Each voxel is transformed into a "super-voxel" (s-voxel) by calculating specific attributes essential for segmentation.
+## 1. Overview
 
-### 3.1 Geometric Center & Means
-The centroid and mean properties are computed:
-$$ V_{X,Y,Z} = \frac{1}{m} \sum_{k=1}^{m} \mathbf{P}_k $$
-This yields the distinct features: $V_x, V_y, V_z$ (position), $V_r, V_g, V_b$ (color), and $V_I$ (intensity).
+The processing pipeline operates through five sequential stages:
 
-### 3.2 Variances
-To quantify homogeneity, variances are calculated:
-$$ \sigma^2 = \frac{1}{m-1} \sum_{k=1}^{m} (val_k - V_{val})^2 $$
-Yielding: $V_{var\_r}, V_{var\_g}, V_{var\_b}, V_{var\_I}$.
+1. **Data Loading**: The process begins by parsing the raw $(x, y, z, R, G, B, I)$ data from the dataset.
 
-### 3.3 Surface Normal Estimation (PCA)
-The surface orientation is derived using **Principal Component Analysis (PCA)**.
-1.  **Covariance Matrix**: The covariance matrix $\mathbf{C}$ of the XYZ coordinates is computed.
-2.  **Eigen Decomposition**: The equation $\mathbf{C} \mathbf{v} = \lambda \mathbf{v}$ is solved.
-3.  **Normal Selection**: The eigenvector corresponding to the **smallest eigenvalue** ($\lambda_{min}$) is selected as the surface normal $\vec{n} = (n_x, n_y, n_z)$.
+2. **Voxelisation**: Next, the raw data is structured into s-voxels using the r-NN method.
 
----
+3. **Transformation**: Feature descriptors, such as moments and surface normals, are then computed for each voxel.
 
-## 4. Implementation Strategy
+4. **Segmentation**: In this stage, the s-voxels are clustered into distinct objects using the **Link-Chain Method**, which relies on both spatial and attribute adjacency.
 
-To ensure efficiency, the implementation uses the following specific designs:
+5. **Classification**: Finally, the resulting segments (e.g., Ground, Building, Tree, Pole, Car) are labeled based on defined geometric rule sets.
 
-### 4.1 Spatial Indexing: K-Dimensional Tree (KD-Tree)
+## 2. Theoretical Framework
 
-Calculating Euclidean distances is an $\mathcal{O}(N)$ operation per seed. A **KD-Tree** is used to perform radius queries in logarithmic time ($\mathcal{O}(\log N)$).
+The core mathematical models driving the implementation are defined below.
 
-#### Algorithm: Construction
-The KD-Tree recursively divides the dataset:
-1.  **Axis Cycling**: The splitting axis cycles $x \to y \to z$.
-2.  **Median Splitting**: The median point defines the splitting plane.
-3.  **Recursive Partitioning**: Points are directed to Left/Right subtrees based on the pivot.
-4.  **Termination**: Recursion stops at the leaf size threshold.
+### 2.1 r-NN Voxelisation
 
-#### Visualization
-![KD-Tree Construction Structure](assets/kd_tree_diagram.png)
-*Figure 1: Illustration of 2D KD-Tree construction. (Top) Recursive subdivision by hyperplanes. (Bottom) Corresponding binary tree structure.*
+The **r-NN** method partitions the space adaptively using a bottom-up approach. This means voxels are created only where data actually exists, avoiding empty processing.
 
-#### Mathematical Efficiency
-This structure allows the algorithm to prune vast spatial regions.
--   **Construction**: $\mathcal{O}(N \log N)$
--   **Range Query**: Average case $\mathcal{O}(\log N)$
 
-### 4.2 Other Optimization Strategies
--   **Visited Mask**: A boolean array tracks assigned points to avoid expensive row deletions.
--   **Vectorization**: `numpy` and `pandas` execute batch calculations for means and variances.
--   **Scipy Implementation**: `scipy.spatial.cKDTree` provides the C++ backend for performance.
 
----
+* **Definition**: A voxel is defined as the set $N$ of points neighboring a random seed $P_{seed}$:
 
-## 5. Segmentation via Link-Chain Method
+  $$
+  N = \{ P_k \in \mathcal{S} \mid \| P_k - P_{seed} \|_2 \le r \}
+  $$
 
-Adjacent s-voxels are clustered into distinct objects based on attributes.
--   **Linkage**: A principal link connects to secondary links (neighbors).
--   **Constraints**: s-voxels are linked if they satisfy thresholds for:
-    -   Spatial Adjacency ($D_{spatial} < T_d$)
-    -   Color Similarity ($D_{color} < T_c$)
-    -   Intensity Similarity ($D_{intensity} < T_i$)
+* **Strict Partitioning**: To ensure exclusive assignment, points assigned to set $N$ are immediately removed from the global set $\mathcal{S}$.
 
-## 6. Classification
+### 2.2 Spatial Indexing (KD-Tree)
 
-Class labels (Building, Road, Pole, Car, Tree) are assigned to segments using geometric descriptors.
--   **Ground Removal**: The manufacturing ground plane is identified and removed first.
--   **Descriptors**:
-    -   *Buildings*: Defined by normals $\parallel$ Ground.
-    -   *Poles*: Defined by vertical linearity.
-    -   *Trees*: Defined by distributed barycenters (height differences).
+To execute the neighborhood search efficiently, a **K-Dimensional Tree** is utilized.
+
+* **Algorithm**: This method recursively bisects the space using axis-aligned hyperplanes (median splitting).
+
+* **Complexity**:
+
+  * Construction: $\mathcal{O}(N \log N)$
+
+  * Query: Average case $\mathcal{O}(\log N)$
+  
+*   **Visualization**:
+    ![KD-Tree Structure](assets/kd_tree_diagram.png)
+    *Conceptual visualization of space partitioning using a KD-Tree in a 2D space with x and y coordinates.*
+
+### 2.3 Surface Normal Estimation (PCA)
+
+Surface normals are estimated via **Principal Component Analysis** of the voxel's covariance matrix $\mathbf{C}$.
+
+1. **Covariance**:
+
+   $$
+   \mathbf{C} = \frac{1}{m-1} \sum (\mathbf{x}_k - \mathbf{\mu}) (\mathbf{x}_k - \mathbf{\mu})^T
+   $$
+
+2. **Eigen Decomposition**:
+
+   $$
+   \mathbf{C} \mathbf{v} = \lambda \mathbf{v}
+   $$
+
+3. **Normal Vector**: The eigenvector $\mathbf{v}_{min}$ corresponding to the **smallest eigenvalue** $\lambda_{min}$ represents the surface normal $\vec{n}$.
+
+### 2.4 Link-Chain Segmentation (Planned)
+
+The segmentation phase clusters s-voxels into objects using a **Link-Chain** strategy.
+
+* **Linkage Criteria**: Two s-voxels $V_i$ and $V_j$ are linked if they satisfy the following thresholds:
+
+  1. **Spatial Proximity**: $\| V_{i(xyz)} - V_{j(xyz)} \| < D_{th}$
+
+  2. **Color Similarity**: $\| V_{i(RGB)} - V_{j(RGB)} \| < C_{th}$
+
+  3. **Intensity Similarity**: $| V_{i(I)} - V_{j(I)} | < I_{th}$
+
+* **Chaining**: The transitive closure of these links forms a segment (Connected Component).
+
+### 2.5 Geometric Classification (Planned)
+
+Finally, segments will be classified based on geometric descriptors derived from the s-voxels.
+
+* **Ground**: These are identified by large planar segments with normal vectors parallel to the global Z-axis ($\vec{n} \approx [0,0,1]$).
+
+* **Buildings**: These segments are characterized by vertical surfaces ($\vec{n} \cdot \vec{z} \approx 0$).
+
+* **Poles**: These are objects exhibiting high vertical linearity ($\lambda_1 \gg \lambda_2 \approx \lambda_3$).
+
+## 3. Code Implementation
+
+The practical execution of the project is handled by specific functional assets implemented in `code/utils.py`. This section details the algorithmic process of each component and how they interact to achieve the theoretical goals.
+
+### 3.1 Data Management
+
+#### `def load_point_cloud(file_path)`
+
+*   **Role**: Serves as the raw data entry point, bridging the file system and the application's memory.
+*   **Process**:
+    1.  **Validation**: First checks if the target path exists using `os.path.exists` to prevent runtime crashes.
+    2.  **Efficient Parsing**: Utilizes `pandas.read_csv` with `engine='c'`. The C-engine is significantly faster than the default Python engine for parsing the 41 million lines of space-separated ASCII data found in the `Semantic3D` dataset.
+    3.  **Memory Management**:
+        *   Spatial coordinates ($x, y, z$) are strictly cast to `np.float32` (single precision) rather than double precision.
+        *   Color/Intensity values ($R, G, B, I$) are cast to `np.uint8` or `np.int32`.
+        *   *Why?* This creates a rigid schema that fits the massive dataset into RAM.
+*   **Goal**: Returns the standardized `DataFrame` structure required by the `RNN_Voxelisation` class.
+
+### 3.2 Core Logic: `class RNN_Voxelisation`
+
+This class encapsulates the state and behavior required for the Radius Nearest Neighbor method.
+
+#### `def __init__(self, df, radius=0.1)`
+
+*   **Role**: Component Initializer.
+*   **Process**:
+    1.  **State Retention**: Stores the full pandas DataFrame reference (`self.df`) and the query radius (`self.radius`).
+    2.  **Geometry Extraction**: Extracts just the spatial columns into a numpy array: `self.points = df[['x', 'y', 'z']].values`.
+*   **Goal**: Prepares the raw coordinate data ($N \times 3$ matrix) specifically for the spatial indexing step.
+
+#### `def build_tree(self)`
+
+*   **Role**: Spatial Indexing Construction.
+*   **Process**:
+    1.  **KD-Tree Generation**: Wraps `scipy.spatial.cKDTree(self.points)`.
+    2.  **Algorithmic Concept**: It recursively partitions the 3D space using axis-aligned hyperplanes to organize points.
+*   **Goal**: This asset is the prerequisite for the `voxelize` method. It transforms the neighborhood search problem from a linear scan $\mathcal{O}(N)$ to a logarithmic tree traversal $\mathcal{O}(\log N)$.
+
+#### `def voxelize(self, sample_size=None, random_seed=42)`
+
+*   **Role**: The core processing loop that executes the "Strict Partitioning" set logic.
+*   **Process**:
+    1.  **State Initialization**:
+        *   Creates a boolean array `visited` initialized to `False` for all $N$ points. This represents the global set $\mathcal{S}$.
+    2.  **Stochastic Ordering**:
+        *   `np.random.permutation` is used to create a shuffled index list.
+        *   *Why?* The dataset often stores points in scan-line order. Processing sequentially would create "tube-like" voxels. Random sampling approximates a true Poisson-disk sampling, ensuring voxels grow naturally from unbiased seeds.
+    3.  **The Extraction Loop**:
+        *   **Seed Selection**: Helper picks the next unvisited index $i$ from the random list.
+        *   **Range Query**: Calls `self.tree.query_ball_point(seed, r)`. This utilizes the KD-Tree asset to instantly retrieve all indices $k$ where $\| P_k - P_{seed} \| \le r$.
+        *   **Exclusive Assignment**:
+            *   Filters indices: `valid = [k for k in neighbors if not visited[k]]`.
+            *   Locks points: `visited[valid] = True`. This represents the mathematical operation $\mathcal{S} \leftarrow \mathcal{S} \setminus N$.
+    4.  **Feature Computation** (Per Voxel):
+        *   **Centroid**: `subset.mean()` computes the geometric center $(V_x, V_y, V_z)$.
+        *   **Homogeneity**: `subset.var()` calculates color/intensity variances.
+        *   **Surface Normal (PCA)**:
+            *   `np.cov`: Computes the $3 \times 3$ covariance matrix of the centered voxel points.
+            *   `np.linalg.eigh`: Solves the eigen decomposition.
+            *   **Selection**: The eigenvector corresponding to the *smallest* eigenvalue is selected as the normal, as this direction minimizes variance (orthogonal to the surface).
+*   **Goal**: Produces the final structured `DataFrame` of Super-Voxels, containing all computed geometric and color features ready for classification.
