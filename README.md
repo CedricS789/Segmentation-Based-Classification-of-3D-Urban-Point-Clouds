@@ -8,7 +8,7 @@ The **Semantic3D** benchmark is utilized as the data source, specifically the `d
 
 The input consists of raw 3D point cloud data that contains spatial coordinates ($x, y, z$), RGB color values, and reflectance intensity. Handling this data presents a challenge due to its scale; the dataset comprises over **40 million** individual points. To manage this effectively, the loading phase has been optimized using C-engine parsing, which allows for efficient parsing of the large-scale ASCII format.
 
-## Phase 2: Voxelisation (r-NN)
+## Phase 2: Voxelisation
 
 To address the issue of data redundancy and to provide structure to the sparse point cloud, the **Radius Nearest Neighbor** voxelisation strategy is applied.
 
@@ -44,9 +44,20 @@ The processing pipeline operates through five sequential stages:
 
 ## 2. Theoretical Framework
 
-The core mathematical models driving the implementation are defined below.
+The mathematical models driving the implementation are defined below.
+
+### 2.0 Processing Pipeline
+
+The methodology follows a linear transformation pipeline designed to convert raw, unstructured data into meaningful semantic objects.
+
+1.  **Input**: Raw Point Cloud (Unstructured $x,y,z$).
+2.  **Intermediate Goal 1**: **Super-Voxels**. Structure the data to reduce redundancy ($40M \to \text{Thousands}$).
+3.  **Intermediate Goal 2**: **Segments**. Cluster voxels into physical objects based on similarity.
+4.  **End Goal**: **Classified Objects**. Assign semantic labels (Ground, Building, etc.) to each segment.
 
 ### 2.1 r-NN Voxelisation
+
+**Goal**: Transform massive, unstructured point data into manageable, regular units called *Super-Voxels*.
 
 The **r-NN** method partitions the space adaptively using a bottom-up approach. This means voxels are created only where data actually exists, avoiding empty processing.
 
@@ -69,7 +80,9 @@ The **r-NN** method partitions the space adaptively using a bottom-up approach. 
 
 ### 2.2 Spatial Indexing
 
-To execute the neighborhood search efficiently, a **K-Dimensional Tree** is utilized.
+**Goal**: Optimize the neighbor search speed from linear time to logarithmic time.
+
+The voxelisation process defined above requires repeated neighborhood searches ($\| P_k - P_{seed} \|_2 \le r$). A naive search would be computationally prohibitive ($\mathcal{O}(N)$ per query). To solve this, a **K-Dimensional Tree** is utilized to index the 3D space.
 
 * **Algorithm**: This method recursively bisects the space using axis-aligned hyperplanes (median splitting).
 
@@ -80,12 +93,16 @@ To execute the neighborhood search efficiently, a **K-Dimensional Tree** is util
   * Query: Average case $\mathcal{O}(\log N)$
   
 *   **Visualization**:
+
     ![KD-Tree Structure](assets/kd_tree_diagram.png)
+    
     *Conceptual visualization of space partitioning using a KD-Tree in a 2D space with x and y coordinates.*
 
 ### 2.3 Surface Normal Estimation
 
-Surface normals are estimated via **Principal Component Analysis** of the voxel's covariance matrix $\mathbf{C}$.
+**Goal**: Extract geometric features (planar orientation) from each super-voxel to assist in classification.
+
+Once the raw points are grouped into super-voxels, we must describe their local geometry to distinguish between different object types (e.g., flat ground vs. vertical walls). This is achieved by estimating the surface normal via **Principal Component Analysis** of the voxel's covariance matrix $\mathbf{C}$.
 
 1. **Covariance**:
 
@@ -113,7 +130,9 @@ Surface normals are estimated via **Principal Component Analysis** of the voxel'
 
 ### 2.4 Link-Chain Segmentation
 
-The segmentation phase clusters s-voxels into objects using a **Link-Chain** strategy.
+**Goal**: Group similar super-voxels together to form complete physical objects (Segments).
+
+Individual super-voxels are too small to represent complete objects. Therefore, the next step involves clustering these adjacent s-voxels into coherent segments using a **Link-Chain** strategy.
 
 * **Linkage Criteria**: Two s-voxels $V_i$ and $V_j$ are linked if they satisfy the following thresholds:
 
@@ -133,7 +152,9 @@ The segmentation phase clusters s-voxels into objects using a **Link-Chain** str
 
 ### 2.5 Geometric Classification
 
-Finally, segments will be classified based on geometric descriptors derived from the s-voxels.
+**Goal**: Assign the final semantic label (e.g., "Building") to each Segment based on its aggregate properties.
+
+With the points now grouped into meaningful segments, the final step is to assign semantic labels. Segments are classified based on the geometric descriptors derived from their constituent s-voxels.
 
 * **Ground**: These are identified by large planar segments with normal vectors parallel to the global Z-axis ($\vec{n} \approx [0,0,1]$).
 
@@ -159,7 +180,7 @@ The practical execution of the project is handled by specific functional assets 
         *   *Why?* This creates a rigid schema that fits the massive dataset into RAM.
 *   **Goal**: Returns the standardized `DataFrame` structure required by the `RNN_Voxelisation` class.
 
-### 3.2 Core Logic: `class RNN_Voxelisation`
+### 3.2 Logic: `class RNN_Voxelisation`
 
 This class encapsulates the state and behavior required for the Radius Nearest Neighbor method.
 
@@ -181,7 +202,7 @@ This class encapsulates the state and behavior required for the Radius Nearest N
 
 #### `def voxelize(self, sample_size=None, random_seed=42)`
 
-*   **Role**: The core processing loop that executes the "Strict Partitioning" set logic.
+*   **Role**: The processing loop that executes the "Strict Partitioning" set logic.
 *   **Process**:
     1.  **State Initialization**:
         *   Creates a boolean array `visited` initialized to `False` for all $N$ points. This represents the global set $\mathcal{S}$.
