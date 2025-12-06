@@ -4,4 +4,4 @@ data/*.txt
 __pycache__/
 *.pyc
 .venv/
-*.md
+read_pdf.py
