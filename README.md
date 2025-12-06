@@ -1,28 +1,28 @@
 # Segmentation Based Classification of 3D Urban Point Clouds
 
-This project implements the methodology described in the research paper *"Segmentation Based Classification of 3D Urban Point Clouds."* The primary goal is to semantically classify 3D urban data by processing raw point clouds into meaningful, classified objects.
+This project implements the methodology described in the research paper *"Segmentation Based Classification of 3D Urban Point Clouds."* The goal is to semantically classify 3D urban data by processing raw point clouds into, classified objects.
 
 ## Phase 1: Data Acquisition
 
 The **Semantic3D** benchmark is utilized as the data source, specifically the `domfountain_station2` dataset.
 
-The input consists of raw 3D point cloud data that contains spatial coordinates ($x, y, z$), RGB color values, and reflectance intensity. Handling this data presents a challenge due to its scale; the dataset comprises **41,268,288** individual points. To manage this effectively, the loading phase has been optimized using C-engine parsing, which allows for efficient parsing of the large-scale ASCII format.
+The input consists of raw 3D point cloud data that contains spatial coordinates ($x, y, z$), RGB color values, and reflectance intensity. Handling this data presents a challenge due to its scale; the dataset comprises over **40 million** individual points. To manage this effectively, the loading phase has been optimized using C-engine parsing, which allows for efficient parsing of the large-scale ASCII format.
 
 ## Phase 2: Voxelisation (r-NN)
 
-To address the issue of data redundancy and to provide structure to the sparse point cloud, the **Radius Nearest Neighbor (r-NN)** voxelisation strategy is applied.
+To address the issue of data redundancy and to provide structure to the sparse point cloud, the **Radius Nearest Neighbor** voxelisation strategy is applied.
 
-During this phase, a fixed radius of $r = 0.1$ **m** is strictly enforced. The output of this process is the grouping of raw points into higher-level structures known as **Super-Voxels (s-voxels)**.
+During this phase, a fixed radius of $r = 0.1$ **m** is strictly enforced. The output of this process is the grouping of raw points into higher-level structures known as **Super-Voxels**.
 
 ## Phase 3: Super-Voxel Transformation
 
 Once the s-voxels are established, each one is transformed into a feature-rich entity by computing a specific set of attributes:
 
-* The **Geometric Center**, or centroid $(V_x, V_y, V_z)$, is calculated for each voxel.
+* The **Centroid** $(V_x, V_y, V_z)$, is calculated for each voxel.
 
 * The **Color Properties** are analyzed by determining the mean RGB and Intensity values, along with their respective variances.
 
-* The **Surface Orientation** is determined by computing normal vectors $(V_{nx}, V_{ny}, V_{nz})$ via Principal Component Analysis (PCA).
+* The **Surface Orientation** is determined by computing normal vectors $(V_{nx}, V_{ny}, V_{nz})$ via **Principal Component Analysis**.
 
 # Implementation
 
@@ -58,9 +58,16 @@ The **r-NN** method partitions the space adaptively using a bottom-up approach. 
   N = \{ P_k \in \mathcal{S} \mid \| P_k - P_{seed} \|_2 \le r \}
   $$
 
+  Where:
+  *   $N$: The subset of neighboring points forming the voxel.
+  *   $P_k$: A candidate point from the global point cloud.
+  *   $\mathcal{S}$: The set of all unvisited points in the cloud.
+  *   $P_{seed}$: The randomly selected seed point for the voxel.
+  *   $r$: The fixed voxelisation radius (0.1 m).
+
 * **Strict Partitioning**: To ensure exclusive assignment, points assigned to set $N$ are immediately removed from the global set $\mathcal{S}$.
 
-### 2.2 Spatial Indexing (KD-Tree)
+### 2.2 Spatial Indexing
 
 To execute the neighborhood search efficiently, a **K-Dimensional Tree** is utilized.
 
@@ -76,7 +83,7 @@ To execute the neighborhood search efficiently, a **K-Dimensional Tree** is util
     ![KD-Tree Structure](assets/kd_tree_diagram.png)
     *Conceptual visualization of space partitioning using a KD-Tree in a 2D space with x and y coordinates.*
 
-### 2.3 Surface Normal Estimation (PCA)
+### 2.3 Surface Normal Estimation
 
 Surface normals are estimated via **Principal Component Analysis** of the voxel's covariance matrix $\mathbf{C}$.
 
@@ -86,29 +93,45 @@ Surface normals are estimated via **Principal Component Analysis** of the voxel'
    \mathbf{C} = \frac{1}{m-1} \sum (\mathbf{x}_k - \mathbf{\mu}) (\mathbf{x}_k - \mathbf{\mu})^T
    $$
 
+   Where:
+   *   $\mathbf{C}$: The $3 \times 3$ covariance matrix representing spatial spread.
+   *   $m$: The total number of points within the current voxel.
+   *   $\mathbf{x}_k$: The spatial coordinates vector $(x, y, z)$ of the $k$-th point.
+   *   $\mathbf{\mu}$: The mean position vector (centroid) of the voxel.
+
 2. **Eigen Decomposition**:
 
    $$
    \mathbf{C} \mathbf{v} = \lambda \mathbf{v}
    $$
 
+   Where:
+   *   $\mathbf{v}$: An eigenvector of the covariance matrix.
+   *   $\lambda$: The corresponding scalar eigenvalue.
+
 3. **Normal Vector**: The eigenvector $\mathbf{v}_{min}$ corresponding to the **smallest eigenvalue** $\lambda_{min}$ represents the surface normal $\vec{n}$.
 
-### 2.4 Link-Chain Segmentation (Planned)
+### 2.4 Link-Chain Segmentation
 
 The segmentation phase clusters s-voxels into objects using a **Link-Chain** strategy.
 
 * **Linkage Criteria**: Two s-voxels $V_i$ and $V_j$ are linked if they satisfy the following thresholds:
 
-  1. **Spatial Proximity**: $\| V_{i(xyz)} - V_{j(xyz)} \| < D_{th}$
+  1. **Spatial Proximity**: $$\| V_{i(xyz)} - V_{j(xyz)} \| < D_{th}$$
 
-  2. **Color Similarity**: $\| V_{i(RGB)} - V_{j(RGB)} \| < C_{th}$
+  2. **Color Similarity**: $$\| V_{i(RGB)} - V_{j(RGB)} \| < C_{th}$$
 
-  3. **Intensity Similarity**: $| V_{i(I)} - V_{j(I)} | < I_{th}$
+  3. **Intensity Similarity**: $$| V_{i(I)} - V_{j(I)} | < I_{th}$$
+
+  Where:
+  *   $V_i, V_j$: The two adjacent super-voxels being compared.
+  *   $D_{th}$: Threshold distance for spatial proximity.
+  *   $C_{th}$: Threshold for RGB color difference.
+  *   $I_{th}$: Threshold for intensity difference. This is 1/4 of total intensity range.
 
 * **Chaining**: The transitive closure of these links forms a segment (Connected Component).
 
-### 2.5 Geometric Classification (Planned)
+### 2.5 Geometric Classification
 
 Finally, segments will be classified based on geometric descriptors derived from the s-voxels.
 
