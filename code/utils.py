@@ -4,6 +4,7 @@ import os
 import time
 from scipy.spatial import cKDTree
 import open3d as o3d
+import matplotlib.cm as cm
 
 def load_point_cloud(file_path, nrows=None):
     """
@@ -133,6 +134,22 @@ class RNN_Voxelisation:
             
             # We can't easily add/remove geometries rapidly without overhead, 
             # so we just modify the main cloud colors and move the markers.
+            
+            # Add Coordinate Frame (X=Red, Y=Green, Z=Blue)
+            vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=2.0, origin=[0, 0, 0]))
+            
+            # Set default camera view
+            ctr = vis.get_view_control()
+            # Look at the center of the cloud
+            if n_points > 0:
+                center = np.mean(self.points_cloud, axis=0)
+                ctr.set_lookat(center)
+                ctr.set_front([0.5, -1.0, 0.5]) # Isometric view
+                ctr.set_up([0.0, 0.0, 1.0])     # Z-axis up
+                ctr.set_zoom(0.5)               # Zoom out slightly
+            
+            # Setup colormap for gradient visualization
+            cmap = cm.get_cmap('jet')
 
         s_voxel_count = 0 #Used to count the number of voxels
         try:
@@ -226,10 +243,15 @@ class RNN_Voxelisation:
                 # Visualization Update (After processing)
                 if visualize:
                     
-                    # Mark processed points as Dark Grey (done)
+                    # Mark processed points with a unique color based on voxel index (Gradient)
+                    # Use modulo to cycle through colors if we have many voxels
+                    color_index = (s_voxel_count % 100) / 100.0
+                    voxel_color = cmap(color_index)[:3] # Get RGB from RGBA
+                    
                     np_colors = np.asarray(main_pcd.colors)
-                    np_colors[valid_neighbor_points_indices] = [0.2, 0.2, 0.2]
+                    np_colors[valid_neighbor_points_indices] = voxel_color
                     main_pcd.colors = o3d.utility.Vector3dVector(np_colors)
+                    
                     vis.update_geometry(main_pcd)
                     vis.poll_events()
                     vis.update_renderer()
@@ -288,6 +310,24 @@ def visualize_point_cloud(df, window_name="Point Cloud"):
 
     # Visualize
     print(f"Opening 3D window for '{window_name}'. Close the window to continue...")
-    o3d.visualization.draw_geometries([pcd], window_name=window_name)
+    
+    vis = o3d.visualization.Visualizer()
+    vis.create_window(window_name=window_name, width=1024, height=768)
+    vis.add_geometry(pcd)
+    
+    # Add Coordinate Frame
+    vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=2.0, origin=[0, 0, 0]))
+    
+    # Set View
+    ctr = vis.get_view_control()
+    if len(points) > 0:
+        center = np.mean(points, axis=0)
+        ctr.set_lookat(center)
+        ctr.set_front([0.5, -1.0, 0.5])
+        ctr.set_up([0.0, 0.0, 1.0])
+        ctr.set_zoom(0.8)
+        
+    vis.run()
+    vis.destroy_window()
     print("Window closed.")
 
