@@ -76,7 +76,7 @@ class RNN_Voxelisation:
         """Builds the KDTree for the point cloud."""
         print("Building KDTree...")
         t0 = time.time() #Start timer
-        self.tree = cKDTree(self.points_cloud)          #Build KDTree using the scipy library. cKDTree is a C implementation of the KDTree and is much faster than the Python implementation.
+        self.tree = cKDTree(self.points_cloud)          # Build KDTree using scipy.spatial.cKDTree for optimized performance.
         print(f"KDTree built in {time.time() - t0:.2f}s")
 
 
@@ -132,24 +132,17 @@ class RNN_Voxelisation:
             central_sphere.paint_uniform_color([1, 0, 0]) # Red
             vis.add_geometry(central_sphere)
             
-            # We can't easily add/remove geometries rapidly without overhead, 
-            # so we just modify the main cloud colors and move the markers.
-            
-            # Add Coordinate Frame (X=Red, Y=Green, Z=Blue)
-            vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=2.0, origin=[0, 0, 0]))
-            
-            # Set default camera view
-            ctr = vis.get_view_control()
-            # Look at the center of the cloud
-            if n_points > 0:
-                center = np.mean(self.points_cloud, axis=0)
-                ctr.set_lookat(center)
-                ctr.set_front([0.5, -1.0, 0.5]) # Isometric view
-                ctr.set_up([0.0, 0.0, 1.0])     # Z-axis up
-                ctr.set_zoom(0.5)               # Zoom out slightly
+            # Modify main cloud colors and translate markers to visualize the process efficiently.
             
             # Setup colormap for gradient visualization
             cmap = cm.get_cmap('jet')
+            
+            # Initial Camera Setup for Animation
+            view_ctl = vis.get_view_control()
+            view_ctl.set_front([0.5, -0.86, 0.5])
+            view_ctl.set_lookat([0, 0, 0])
+            view_ctl.set_up([0, 0, 1])
+            view_ctl.set_zoom(0.3)
 
         s_voxel_count = 0 #Used to count the number of voxels
         try:
@@ -273,7 +266,7 @@ class RNN_Voxelisation:
         return pd.DataFrame(super_voxels)
 
 
-def visualize_point_cloud(df, window_name="Point Cloud"):
+def visualize_point_cloud(df, window_name="Point Cloud", viz_settings=None):
     """
     Helper function to visualize the point cloud using Open3D.
     Handles both raw data (x, y, z, r, g, b) and voxel data (V_x, V_y, V_z, V_r, V_g, V_b).
@@ -281,7 +274,11 @@ def visualize_point_cloud(df, window_name="Point Cloud"):
     Args:
         df (pd.DataFrame): The dataframe containing point cloud data.
         window_name (str): Title of the visualization window.
+        viz_settings (dict): Optional dictionary of visualization settings (zoom, front, lookat, up).
     """
+    if viz_settings is None:
+        viz_settings = {}
+        
     print(f"Preparing visualization for: {window_name}...")
     
     # Check for column names
@@ -309,24 +306,22 @@ def visualize_point_cloud(df, window_name="Point Cloud"):
         pcd.colors = o3d.utility.Vector3dVector(colors)
 
     # Visualize
+    # Visualize using Visualizer for camera control
     print(f"Opening 3D window for '{window_name}'. Close the window to continue...")
     
     vis = o3d.visualization.Visualizer()
     vis.create_window(window_name=window_name, width=1024, height=768)
     vis.add_geometry(pcd)
     
-    # Add Coordinate Frame
-    vis.add_geometry(o3d.geometry.TriangleMesh.create_coordinate_frame(size=2.0, origin=[0, 0, 0]))
-    
-    # Set View
-    ctr = vis.get_view_control()
-    if len(points) > 0:
-        center = np.mean(points, axis=0)
-        ctr.set_lookat(center)
-        ctr.set_front([0.5, -1.0, 0.5])
-        ctr.set_up([0.0, 0.0, 1.0])
-        ctr.set_zoom(0.8)
-        
+    # Set default view
+    view_ctl = vis.get_view_control()
+    # Set camera configuration - typically Z-up for urban scenes
+    view_ctl.set_front(viz_settings.get('front', [0.5, -0.86, 0.5]))  
+    view_ctl.set_lookat(viz_settings.get('lookat', [0, 0, 0]))
+    view_ctl.set_up(viz_settings.get('up', [0, 0, 1]))
+    view_ctl.set_zoom(viz_settings.get('zoom', 0.3))
+                                
+    # Actually, let's execute visualization
     vis.run()
     vis.destroy_window()
     print("Window closed.")

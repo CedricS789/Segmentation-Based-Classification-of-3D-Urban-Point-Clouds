@@ -4,3 +4,4 @@ __pycache__/
 tools/
 *.pyc
 .venv/
+.idea/
