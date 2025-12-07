@@ -47,7 +47,7 @@ def main():
 
     # Save Intermediate Raw Data
     if SAVE_INTERMEDIATES:
-        save_dataframe(df, f"raw_data_{len(df)}.csv", OUTPUT_DIR, None)
+        save_dataframe(df, f"raw_data_{len(df)}.csv", OUTPUT_DIR, 10000)
         save_point_cloud_ply(df, f"raw_data_{len(df)}.ply", OUTPUT_DIR, None)
 
     # Voxelisation
