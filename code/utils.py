@@ -108,15 +108,15 @@ class RNN_Voxelisation:
         start_time = time.time()                                #Start timer
         
         # Visualization Setup
-        vis = None              #Initialize the visualizer
+        self.vis = None         #Initialize the visualizer as class attribute
         main_pcd = None         #Initialize the main point cloud
         central_sphere = None   #Initialize the root sphere
         sv_sphere = None        #Initialize the super voxel sphere
         
         if visualize:
             print("Initializing 3D Animation...")
-            vis = o3d.visualization.Visualizer()
-            vis.create_window(window_name="r-NN Voxelization Process", width=1024, height=768)
+            self.vis = o3d.visualization.Visualizer()
+            self.vis.create_window(window_name="r-NN Voxelization Process", width=1024, height=768)
             
             # Create main point cloud
             main_pcd = o3d.geometry.PointCloud()
@@ -125,12 +125,12 @@ class RNN_Voxelisation:
             # Default color: Grey
             colors = np.ones((n_points, 3)) * 0.7 
             main_pcd.colors = o3d.utility.Vector3dVector(colors)
-            vis.add_geometry(main_pcd)
+            self.vis.add_geometry(main_pcd)
             
             # Placeholders for Seed and SuperVoxel
             central_sphere = o3d.geometry.TriangleMesh.create_sphere(radius=self.radius/5)
             central_sphere.paint_uniform_color([1, 0, 0]) # Red
-            vis.add_geometry(central_sphere)
+            self.vis.add_geometry(central_sphere)
             
             # Modify main cloud colors and translate markers to visualize the process efficiently.
             
@@ -138,23 +138,25 @@ class RNN_Voxelisation:
             cmap = cm.get_cmap('jet')
             
             # Initial Camera Setup for Animation
-            view_ctl = vis.get_view_control()
+            view_ctl = self.vis.get_view_control()
             view_ctl.set_front([0.5, -0.86, 0.5])
             view_ctl.set_lookat([0, 0, 0])
+            view_ctl.set_up([0, 0, 1])
             view_ctl.set_up([0, 0, 1])
             view_ctl.set_zoom(0.3)
 
         s_voxel_count = 0 #Used to count the number of voxels
+        last_vis_update = time.time() # Initialize timer for throttling
         try:
             for current_point_index in shuffled_indices:
                 if is_index_visited[current_point_index]:
                     continue
                 
                 # 1. Pick root point
-                centroid_point = self.points_cloud[current_point_index]
+                current_point = self.points_cloud[current_point_index]
                 
                 # 2. Find neighbors of root_point within radius r using a scipy method
-                neighbor_points_indices = self.tree.query_ball_point(centroid_point, self.radius) 
+                neighbor_points_indices = self.tree.query_ball_point(current_point, self.radius) 
                 
                 # Filter out already visited neighbors
                 valid_neighbor_points_indices = [idx for idx in neighbor_points_indices if not is_index_visited[idx]]
@@ -165,8 +167,8 @@ class RNN_Voxelisation:
                 # Visualization Update (Before processing)
                 if visualize:
                     # Update Seed Marker
-                    central_sphere.translate(centroid_point - central_sphere.get_center(), relative=True)
-                    vis.update_geometry(central_sphere)
+                    central_sphere.translate(current_point - central_sphere.get_center(), relative=True)
+                    self.vis.update_geometry(central_sphere)
                     
                     # Highlight Neighbors (Green)
                     np_colors = np.asarray(main_pcd.colors)
@@ -176,12 +178,12 @@ class RNN_Voxelisation:
                     np_colors[current_point_index] = [1, 0, 0]
                     
                     main_pcd.colors = o3d.utility.Vector3dVector(np_colors)
-                    vis.update_geometry(main_pcd)
+                    self.vis.update_geometry(main_pcd)
                     
-                    vis.poll_events()
-                    vis.update_renderer()
+                    self.vis.poll_events()
+                    self.vis.update_renderer()
                     
-                    # specific delay
+                    # add a delay to slowly vizualize the process execution
                     # time.sleep(0.01) 
 
                 # Mark as visited
@@ -245,9 +247,9 @@ class RNN_Voxelisation:
                     np_colors[valid_neighbor_points_indices] = voxel_color
                     main_pcd.colors = o3d.utility.Vector3dVector(np_colors)
                     
-                    vis.update_geometry(main_pcd)
-                    vis.poll_events()
-                    vis.update_renderer()
+                    self.vis.update_geometry(main_pcd)
+                    self.vis.poll_events()
+                    self.vis.update_renderer()
 
                 s_voxel_count += 1
                 if s_voxel_count % 1000 == 0:
@@ -258,7 +260,7 @@ class RNN_Voxelisation:
                     break
         finally:
             if visualize:
-                vis.destroy_window()
+                self.vis.destroy_window()
 
         print(f"\nVoxelisation complete. Created {len(super_voxels)} s-voxels in {time.time() - start_time:.2f}s.")
         
@@ -321,8 +323,84 @@ def visualize_point_cloud(df, window_name="Point Cloud", viz_settings=None):
     view_ctl.set_up(viz_settings.get('up', [0, 0, 1]))
     view_ctl.set_zoom(viz_settings.get('zoom', 0.3))
                                 
+    view_ctl.set_zoom(viz_settings.get('zoom', 0.3))
+                                
     # Actually, let's execute visualization
     vis.run()
     vis.destroy_window()
     print("Window closed.")
+
+
+def save_point_cloud_ply(df, filename, output_dir, max_points):
+    """
+    Saves the data as a .ply file for Open3D visualization.
+    
+    Args:
+        df (pd.DataFrame): The dataframe to save.
+        filename (str): Name of the output file.
+        output_dir (str): Directory where the file will be saved.
+        max_points (int): Maximum number of points to save (head of dataframe). Defaults to None (save all).
+    """
+    filepath = os.path.join(output_dir, filename)
+    print(f"Saving .ply to {filepath}...")
+    
+    # Truncate if requested
+    if max_points and len(df) > max_points:
+        print(f"  Note: Truncating PLY output to first {max_points} points.")
+        df = df.head(max_points)
+
+    # Check for column names
+    points = None
+    colors = None
+    
+    if 'x' in df.columns and 'y' in df.columns and 'z' in df.columns:
+        points = df[['x', 'y', 'z']].values
+        if 'r' in df.columns and 'g' in df.columns and 'b' in df.columns:
+            colors = df[['r', 'g', 'b']].values / 255.0
+    elif 'V_x' in df.columns and 'V_y' in df.columns and 'V_z' in df.columns:
+        points = df[['V_x', 'V_y', 'V_z']].values
+        if 'V_r' in df.columns and 'V_g' in df.columns and 'V_b' in df.columns:
+            colors = df[['V_r', 'V_g', 'V_b']].values / 255.0
+
+    if points is not None:
+        pcd = o3d.geometry.PointCloud()
+        pcd.points = o3d.utility.Vector3dVector(points)
+        if colors is not None:
+            pcd.colors = o3d.utility.Vector3dVector(colors)
+        
+        o3d.io.write_point_cloud(filepath, pcd)
+        print("Saved PLY file.")
+    else:
+        print("Error: Could not determine points for PLY saving.")
+
+
+def save_dataframe(df, filename, output_dir, max_points=None):
+    """
+    Saves a copy of the dataframe to a CSV file.
+    
+    Args:
+        df (pd.DataFrame): The dataframe to save.
+        filename (str): Name of the output file (e.g., 'raw_data.csv').
+        output_dir (str): Directory where the file will be saved.
+        max_points (int): Maximum number of rows to save (head of dataframe). Defaults to None (save all).
+    """
+    if df is None or df.empty:
+        print(f"Warning: DataFrame is empty, not saving {filename}.")
+        return
+
+    filepath = os.path.join(output_dir, filename)
+    print(f"Saving {filename} to {filepath}...")
+
+    try:
+        if max_points and len(df) > max_points:
+            print(f"  Note: Truncating output to first {max_points} rows.")
+            df_to_save = df.head(max_points)
+        else:
+            df_to_save = df
+
+        df_to_save.to_csv(filepath, index=False)
+        print(f"  Saved {len(df_to_save)} rows.")
+        
+    except Exception as e:
+        print(f"Error saving {filename}: {e}")
 
